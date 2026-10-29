@@ -40,6 +40,7 @@ func (h *Handler) connect(c *gin.Context) {
 
 var pairingMessages = map[string]string{
 	device.ModeReconnect: "Menyambung ulang dengan sesi yang tersimpan, tidak perlu scan.",
+	device.ModeConnected: "Perangkat sudah tersambung ke WhatsApp. Untuk mengganti nomor, tekan Disconnect dulu.",
 	device.ModeQR:        "Pindai QR dari WhatsApp HP: Perangkat tertaut > Tautkan perangkat.",
 	device.ModeCode:      "Masukkan kode ini di WhatsApp HP: Perangkat tertaut > Tautkan perangkat > Tautkan dengan nomor telepon.",
 }

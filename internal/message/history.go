@@ -17,7 +17,7 @@ import (
 
 // Batas impor riwayat chat saat HP baru ditautkan, supaya database tidak membengkak.
 const (
-	historyMaxChats    = 300 // chat per device (selama proses berjalan)
+	historyMaxChats    = 300 // chat berbeda per device (selama proses berjalan)
 	historyMaxMessages = 50  // pesan terakhir per chat
 )
 
@@ -42,7 +42,12 @@ func (in *Inbox) OnHistorySync(branch, device string, cli *whatsmeow.Client, e *
 	in.histMu.Lock()
 	defer in.histMu.Unlock()
 	if in.histChats == nil {
-		in.histChats = map[string]int{}
+		in.histChats = map[string]map[string]bool{}
+	}
+	seen := in.histChats[device]
+	if seen == nil {
+		seen = map[string]bool{}
+		in.histChats[device] = seen
 	}
 	ctx := context.Background()
 
@@ -58,11 +63,13 @@ func (in *Inbox) OnHistorySync(branch, device string, cli *whatsmeow.Client, e *
 
 	chats, msgs := 0, 0
 	for _, conv := range data.GetConversations() {
-		if in.histChats[device] >= historyMaxChats {
-			break
+		// WhatsApp mengirim riwayat bertahap: chat yang sama bisa datang lagi dengan pesan lebih lama.
+		// Batas dihitung per chat berbeda, jadi chat yang sudah masuk tetap boleh ditambah pesannya.
+		if !seen[conv.GetID()] && len(seen) >= historyMaxChats {
+			continue
 		}
 		if n := in.importConversation(ctx, branch, device, cli, conv); n > 0 {
-			in.histChats[device]++
+			seen[conv.GetID()] = true
 			chats++
 			msgs += n
 		}

@@ -156,6 +156,7 @@ const (
 	ModeReconnect = "reconnect" // sesi lama dipakai lagi, tanpa scan
 	ModeQR        = "qr"        // QR dikirim lewat SSE device.qr
 	ModeCode      = "code"      // kode pairing dikembalikan
+	ModeConnected = "connected" // sudah tersambung ke WhatsApp, tidak perlu scan
 )
 
 // Connect memulai pairing. phone kosong = QR; diisi = kode pairing.
@@ -175,7 +176,9 @@ func (m *Manager) Connect(ctx context.Context, branch, id, phone string) (code, 
 			if !s.Client.IsConnected() {
 				return "", ModeReconnect, s.Client.Connect()
 			}
-			return "", "", ErrAlreadyLinked
+			// Sudah tersambung: bukan kesalahan, cukup beri tahu bizbos supaya tampilannya disegarkan.
+			// Untuk mengganti nomor tetap harus Disconnect dulu.
+			return "", ModeConnected, nil
 		}
 		m.close(s) // pairing lama dibuang, mulai yang baru
 	}

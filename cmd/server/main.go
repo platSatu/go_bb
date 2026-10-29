@@ -51,7 +51,10 @@ func main() {
 	files := media.New(db, cfg.DataDir, bus, client)
 	out := sender.New(db, cfg, bus, inbox, files, client)
 
-	devices.OnReady = func(id string) { out.Kick(ctx, id) }
+	devices.OnReady = func(id string) {
+		out.Kick(ctx, id)
+		go inbox.FillNames(id, devices.Client(id)) // nama chat kosong diisi dari kontak HP
+	}
 	devices.OnEvent = func(s *device.Session, evt any) {
 		switch e := evt.(type) {
 		case *events.Message:
@@ -60,7 +63,13 @@ func main() {
 			inbox.OnReceipt(s.BranchID, s.DeviceID, s.Client, e)
 		case *events.HistorySync:
 			// Riwayat chat setelah HP ditautkan; bisa besar, jadi tidak menahan event lain.
-			go inbox.OnHistorySync(s.BranchID, s.DeviceID, s.Client, e)
+			go func() {
+				inbox.OnHistorySync(s.BranchID, s.DeviceID, s.Client, e)
+				inbox.FillNames(s.DeviceID, s.Client)
+			}()
+		case *events.AppStateSyncComplete:
+			// Kontak HP selesai disinkron: isi nama chat yang masih kosong.
+			go inbox.FillNames(s.DeviceID, s.Client)
 		case *events.MediaRetry:
 			files.HandleRetry(s.BranchID, s.DeviceID, e)
 		case *events.Presence, *events.ChatPresence:

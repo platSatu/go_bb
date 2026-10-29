@@ -16,8 +16,17 @@ import (
 )
 
 func Open(c *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=%s",
-		c.DBUser, c.DBPass, c.DBHost, c.DBPort, c.DBName, url.QueryEscape(c.Location.String()))
+	// Zona waktu sesi MySQL disamakan dengan loc (sama seperti DB_TIMEZONE di app.bizbos).
+	// Tanpa ini sesi memakai zona server (UTC) sehingga kolom TIMESTAMP yang ditulis Go
+	// terbaca 7 jam lebih maju di bizbos.
+	_, offset := time.Now().In(c.Location).Zone()
+	sign := "+"
+	if offset < 0 {
+		sign, offset = "-", -offset
+	}
+	tz := fmt.Sprintf("'%s%02d:%02d'", sign, offset/3600, offset%3600/60)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=%s&time_zone=%s",
+		c.DBUser, c.DBPass, c.DBHost, c.DBPort, c.DBName, url.QueryEscape(c.Location.String()), url.QueryEscape(tz))
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: logger.New(log.New(os.Stdout, "", log.LstdFlags), logger.Config{
