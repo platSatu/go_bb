@@ -58,6 +58,9 @@ func main() {
 			inbox.OnMessage(s.BranchID, s.DeviceID, s.Client, e)
 		case *events.Receipt:
 			inbox.OnReceipt(s.BranchID, s.DeviceID, s.Client, e)
+		case *events.HistorySync:
+			// Riwayat chat setelah HP ditautkan; bisa besar, jadi tidak menahan event lain.
+			go inbox.OnHistorySync(s.BranchID, s.DeviceID, s.Client, e)
 		case *events.MediaRetry:
 			files.HandleRetry(s.BranchID, s.DeviceID, e)
 		case *events.Presence, *events.ChatPresence:

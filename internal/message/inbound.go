@@ -24,6 +24,9 @@ type Inbox struct {
 	db    *gorm.DB
 	bus   *notify.Bus
 	chats sync.Map // device_id|jid -> chat_id
+
+	histMu    sync.Mutex     // impor riwayat dijalankan satu per satu
+	histChats map[string]int // device_id -> jumlah chat riwayat yang sudah diimpor
 }
 
 func NewInbox(db *gorm.DB, bus *notify.Bus) *Inbox { return &Inbox{db: db, bus: bus} }
