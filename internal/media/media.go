@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -63,10 +64,50 @@ type Service struct {
 	locks  [64]sync.Mutex // satu unduhan per pesan pada satu waktu
 
 	avatarLimit sync.Map // device_id -> *limiter
+
+	prefetch chan prefetchJob
 }
 
+type prefetchJob struct{ branch, messageID string }
+
+// Unduhan di belakang layar: file media pesan baru langsung disimpan (seperti WhatsApp di HP),
+// jadi gambar/video tampil instan di inbox & panel Media dan tidak hilang walau server WhatsApp
+// sudah menghapusnya. File besar tetap diunduh saat dibuka.
+const (
+	prefetchWorkers = 3
+	prefetchQueue   = 2000
+	prefetchMaxSize = 25 << 20
+)
+
 func New(db *gorm.DB, dataDir string, bus *notify.Bus, client func(string) *whatsmeow.Client) *Service {
-	return &Service{db: db, dir: dataDir, bus: bus, client: client}
+	s := &Service{db: db, dir: dataDir, bus: bus, client: client, prefetch: make(chan prefetchJob, prefetchQueue)}
+	for i := 0; i < prefetchWorkers; i++ {
+		go s.prefetchWorker()
+	}
+	return s
+}
+
+// Prefetch mengantre unduhan media satu pesan. Antrean penuh = dilewati (tetap bisa diunduh saat dibuka).
+func (s *Service) Prefetch(branch, messageID string) {
+	select {
+	case s.prefetch <- prefetchJob{branch, messageID}:
+	default:
+	}
+}
+
+func (s *Service) prefetchWorker() {
+	for job := range s.prefetch {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[media] prefetch %s panic: %v", job.messageID, r)
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			_, _ = s.get(ctx, job.branch, job.messageID, false)
+		}()
+	}
 }
 
 type File struct {
@@ -75,6 +116,11 @@ type File struct {
 
 // Get mengembalikan file media pesan; diunduh dari WhatsApp saat pertama kali diminta.
 func (s *Service) Get(ctx context.Context, branch, messageID string) (*File, error) {
+	return s.get(ctx, branch, messageID, true)
+}
+
+// get: allowRetry=false untuk unduhan di belakang layar (tidak meminta HP mengunggah ulang file lama).
+func (s *Service) get(ctx context.Context, branch, messageID string, allowRetry bool) (*File, error) {
 	mu := &s.locks[fnv32(messageID)%uint32(len(s.locks))]
 	mu.Lock()
 	defer mu.Unlock()
@@ -100,6 +146,9 @@ func (s *Service) Get(ctx context.Context, branch, messageID string) (*File, err
 	if msg.MediaSize != nil && *msg.MediaSize > limits["document"] {
 		return nil, ErrTooLarge
 	}
+	if !allowRetry && msg.MediaSize != nil && *msg.MediaSize > prefetchMaxSize {
+		return nil, ErrTooLarge
+	}
 	cli := s.client(msg.DeviceID)
 	if cli == nil {
 		return nil, ErrNotReady
@@ -119,7 +168,7 @@ func (s *Service) Get(ctx context.Context, branch, messageID string) (*File, err
 	err = cli.DownloadMediaWithPathToFile(dctx, meta.DirectPath, meta.EncSHA256, meta.SHA256, meta.MediaKey, waTypes[meta.Kind], "", false, tmp)
 	tmp.Close()
 	if err != nil {
-		if errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410) {
+		if allowRetry && (errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410)) {
 			return nil, s.requestRetry(ctx, cli, &msg, &meta)
 		}
 		return nil, errors.New("Gagal mengunduh file dari WhatsApp, silakan coba lagi.")

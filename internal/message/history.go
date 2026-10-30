@@ -17,8 +17,8 @@ import (
 
 // Batas impor riwayat chat saat HP baru ditautkan, supaya database tidak membengkak.
 const (
-	historyMaxChats    = 300 // chat berbeda per device (selama proses berjalan)
-	historyMaxMessages = 50  // pesan terakhir per chat
+	historyMaxChats    = 2000 // chat berbeda per device (selama proses berjalan)
+	historyMaxMessages = 200  // pesan terakhir per chat
 )
 
 // webStatus: status pesan keluar di riwayat WhatsApp -> status bizbos.
@@ -139,6 +139,10 @@ func (in *Inbox) importConversation(ctx context.Context, branch, device string, 
 			continue
 		}
 		saved++
+		// Media riwayat 30 hari terakhir ikut diunduh; yang lebih lama biasanya sudah dihapus server WhatsApp.
+		if time.Since(msg.SentAt) < 30*24*time.Hour {
+			in.mediaSaved(msg)
+		}
 		if newest == nil || msg.SentAt.After(newest.SentAt) {
 			newest, newestPreview = msg, prev
 		}

@@ -25,6 +25,9 @@ type Inbox struct {
 	bus   *notify.Bus
 	chats sync.Map // device_id|jid -> chat_id
 
+	// OnMedia dipanggil setiap pesan bermedia tersimpan, supaya file-nya langsung diunduh di belakang layar.
+	OnMedia func(branch, messageID string)
+
 	histMu    sync.Mutex                 // impor riwayat dijalankan satu per satu
 	histChats map[string]map[string]bool // device_id -> chat riwayat yang sudah diimpor
 }
@@ -124,12 +127,19 @@ func (in *Inbox) OnMessage(branch, device string, cli *whatsmeow.Client, e *even
 		return // duplikat (pesan dikirim ulang oleh WhatsApp) atau gagal simpan
 	}
 	in.touchChat(msg.ChatID, &msg, preview(p))
+	in.mediaSaved(&msg)
 
 	if !info.IsFromMe && !info.IsGroup && optOutWords[strings.ToUpper(strings.TrimSpace(p.Body))] {
 		in.db.Exec("INSERT IGNORE INTO wa_optouts (id, branch_id, phone, created_at) VALUES (?, ?, ?, ?)", store.NewID(), branch, chatJID.User, time.Now())
 	}
 
 	in.emitNew(&msg, chatJID, preview(p), "", false)
+}
+
+func (in *Inbox) mediaSaved(msg *store.Message) {
+	if in.OnMedia != nil && msg.MediaMeta != nil && msg.MediaPath == nil {
+		in.OnMedia(msg.BranchID, msg.ID)
+	}
 }
 
 // SaveOutgoing dipakai sender setelah pesan terkirim dari bizbos.

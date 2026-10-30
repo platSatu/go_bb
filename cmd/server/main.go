@@ -50,6 +50,7 @@ func main() {
 	inbox := message.NewInbox(db, bus)
 	files := media.New(db, cfg.DataDir, bus, client)
 	out := sender.New(db, cfg, bus, inbox, files, client)
+	inbox.OnMedia = files.Prefetch
 
 	devices.OnReady = func(id string) {
 		out.Kick(ctx, id)
