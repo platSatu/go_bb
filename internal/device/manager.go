@@ -78,7 +78,8 @@ func NewManager(ctx context.Context, db *gorm.DB, dataDir string, bus *notify.Bu
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, err
 	}
-	store.SetOSInfo("Bizbos", [3]uint32{2, 0, 0})
+	// Nama yang tampil di HP (WhatsApp > Perangkat tertaut). Berlaku untuk nomor yang ditautkan setelah ini.
+	store.SetOSInfo("WhatsApp (Web)", [3]uint32{2, 0, 0})
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
 
 	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)", filepath.Join(dataDir, "session.db"))
